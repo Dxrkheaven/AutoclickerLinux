@@ -7,7 +7,10 @@ window.geometry("420x210")
 window.title("Auto Clicker")
 window.configure(bg="#333333")
 window.resizable(False, False)
-window.iconbitmap("mesmerizerteto.ico")
+try:
+    window.iconbitmap("mesmerizerteto.ico")
+except TclError:
+    pass  # Tk on Linux can't load .ico files
 
 
 def save_delay():

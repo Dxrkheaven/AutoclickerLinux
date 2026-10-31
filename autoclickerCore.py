@@ -1,77 +1,119 @@
+import math
+import select
+import threading
 import time
-import sys
-from evdev import InputDevice, ecodes, UInput, AbsInfo
 
-# Configuration
-delay = 0.001
+from evdev import InputDevice, UInput, UInputError, ecodes as e, list_devices
+
+HOTKEY = e.KEY_F6
+BUTTONS = {"left": e.BTN_LEFT, "right": e.BTN_RIGHT}
+
 clicking = False
-click_type = "left"  # "left" or "right"
+delay = 0.001
+click_type = "left"  # left or right
 
-def find_keyboard_device():
-    """Automatically find a connected keyboard input device."""
-    from evdev import list_devices, InputDevice
-    devices = [InputDevice(path) for path in list_devices()]
-    for dev in devices:
-        caps = dev.capabilities()
-        # Check if the device has keys and specifically the F6 key (KEY_F6)
-        if ecodes.EV_KEY in caps and ecodes.KEY_F6 in caps[ecodes.EV_KEY]:
-            return dev
-    return None
+
+def set_delay(new_delay):
+    global delay
+    try:
+        value = float(new_delay)
+        if not math.isfinite(value) or value < 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        print("Invalid delay input")
+        return
+    delay = value
+    print("Delay:", delay)
+
+
+def set_click_type(new_type):
+    global click_type
+    if new_type not in BUTTONS:
+        print("Invalid click type")
+        return
+    click_type = new_type
+    print("Click Type:", click_type)
+
+
+def toggle():
+    global clicking
+    clicking = not clicking
+    print("Clicking:", clicking)
+
+
+def _find_keyboards():
+    """Every readable input device that has an F6 key."""
+    keyboards = []
+    for path in list_devices():
+        try:
+            dev = InputDevice(path)
+            keys = dev.capabilities().get(e.EV_KEY, [])
+        except OSError:  # includes PermissionError
+            continue
+        if HOTKEY in keys:
+            keyboards.append(dev)
+        else:
+            dev.close()
+    return keyboards
+
+
+def _hotkey_listener(keyboards):
+    devices = {dev.fd: dev for dev in keyboards}
+    last = 0.0
+    while devices:
+        readable, _, _ = select.select(list(devices), [], [])
+        for fd in readable:
+            try:
+                for ev in devices[fd].read():
+                    # value 1 = key down (0 = up, 2 = autorepeat)
+                    if ev.type == e.EV_KEY and ev.code == HOTKEY and ev.value == 1:
+                        now = time.monotonic()
+                        # debounce: remappers (keyd, kmonad...) can make the
+                        # same press show up on two devices at once
+                        if now - last > 0.1:
+                            last = now
+                            toggle()
+            except BlockingIOError:
+                continue
+            except OSError:  # keyboard unplugged
+                devices.pop(fd).close()
+
 
 def run():
-    global clicking, delay, click_type
-
-    # Setup virtual mouse using uinput
-    caps = {
-        ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_RIGHT],
-    }
-    
-    try:
-        ui = UInput(caps, name="auto-clicker", vendor=0x1234, product=0x5678)
-    except Exception as e:
-        print(f"Failed to create UInput device. Are you running as root or is /dev/uinput accessible? Error: {e}")
-        sys.exit(1)
-
-    # Find keyboard
-    kb = find_keyboard_device()
-    if not kb:
-        print("Error: Could not find a keyboard device with F6 capability. Please specify one manually.")
-        sys.exit(1)
-
-    print(f"Using keyboard device: {kb.name} ({kb.path})")
-    print("Press F6 to toggle clicking. Press Ctrl+C to exit.")
-
-    # Grab the keyboard device so key presses are intercepted (optional, comment out if you don't want to grab)
-    # kb.grab()
+    keyboards = _find_keyboards()
+    if not keyboards:
+        print("No readable keyboard found. Add yourself to the 'input' group "
+              "(then log out and back in).")
+        return
 
     try:
-        # We'll use non-blocking reads or check select, but since we need a loop that 
-        # clicks rapidly when enabled, we can use select with a timeout equal to our delay.
-        import select
-        
+        ui = UInput(
+            # REL_X/REL_Y make desktops treat this as a real mouse
+            {e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT], e.EV_REL: [e.REL_X, e.REL_Y]},
+            name="dxrk-autoclicker",
+        )
+    except (OSError, UInputError) as err:
+        print("Could not create virtual mouse:", err)
+        print("Load the module (sudo modprobe uinput) and make /dev/uinput writable.")
+        return
+
+    threading.Thread(target=_hotkey_listener, args=(keyboards,), daemon=True).start()
+
+    try:
         while True:
-            r, w, x = select.select([kb], [], [], 0 if clicking else 0.05)
-            
-            if r:
-                for event in kb.read():
-                    if event.type == ecodes.EV_KEY and event.code == ecodes.KEY_F6:
-                        if event.value == 1:  # Key down
-                            clicking = not clicking
-                            print("Clicking:", clicking)
-
             if clicking:
-                btn = ecodes.BTN_LEFT if click_type == "left" else ecodes.BTN_RIGHT
-                # Press and release
-                ui.write(ecodes.EV_KEY, btn, 1)
+                button = BUTTONS[click_type]
+                ui.write(e.EV_KEY, button, 1)
                 ui.syn()
-                ui.write(ecodes.EV_KEY, btn, 0)
+                ui.write(e.EV_KEY, button, 0)
                 ui.syn()
                 time.sleep(delay)
-
-    except KeyboardInterrupt:
-        print("\nExiting...")
+            else:
+                # prevents CPU from being maxed when idle
+                time.sleep(0.05)
     finally:
         ui.close()
+
 
 if __name__ == "__main__":
     run()
