@@ -1,1 +1,1 @@
-This is a remake of my DxrkAutoClicker but using evdev so it's available on linux. Since it's on linux you should just download python and compile it yourself I aint making an AppImage for this. To use it do "python autoclickerGUI.py"
+This is a remake of my DxrkAutoClicker but using evdev so it's available on linux. Since it's on linux you should just download python and compile it yourself I aint making an AppImage for this. To use it do "python3 autoclickerGUI.py"
