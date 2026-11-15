@@ -5,7 +5,7 @@ import time
 
 from evdev import InputDevice, UInput, UInputError, ecodes as e, list_devices
 
-HOTKEY = e.KEY_F6
+HOTKEY = e.KEY_F2
 BUTTONS = {"left": e.BTN_LEFT, "right": e.BTN_RIGHT}
 
 clicking = False
