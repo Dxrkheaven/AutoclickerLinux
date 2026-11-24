@@ -1,1 +1,2 @@
-This is a remake of my DxrkAutoClicker but using evdev so it's available on linux. Since it's on linux you should just download python and compile it yourself I aint making an AppImage for this. To use it do "python3 autoclickerGUI.py"
+This is a remake of my DxrkAutoClicker but using evdev so it's available on linux. To run it, compile it yourself install python and run "python3 autoclickerGUI.py".
+This auto clicker clicks at roughly 15K cps at minimum delay without breaking anything or maxing out the cpu usage, testing for this is minimal tho, and you should try it out on your machine first before assuming its the same case on every machine.
